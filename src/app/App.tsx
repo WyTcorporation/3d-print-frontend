@@ -7,7 +7,7 @@ export default function App() {
     return (
         <div className="min-h-dvh bg-neutral-50 text-neutral-900">
             <NavBar />
-            <main className="max-w-5xl mx-auto px-4 py-6">
+            <main className="max-w-5xl mx-auto px-4 py-8">
                 <Routes>
                     {/* Головна-«привітання» */}
                     <Route path="/" element={<Page title="3D-Print Shop MVP">

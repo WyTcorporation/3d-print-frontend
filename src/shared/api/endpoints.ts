@@ -27,8 +27,12 @@ export const API = {
         checkout: "/v1/payments/checkout",
     },
 
+    files: {
+        preview: (modelId: number) => `/v1/files/preview/${modelId}.png`,
+    },
+
     jobs: {
-        me: "/v1/print-jobs",
+        list: "/v1/print-jobs",
         preflight: (id: number) => `/v1/print-jobs/${id}/preflight`,
         start:    (id: number) => `/v1/print-jobs/${id}/start`,
         pause:    (id: number) => `/v1/print-jobs/${id}/pause`,

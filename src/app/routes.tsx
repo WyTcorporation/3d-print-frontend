@@ -1,4 +1,3 @@
-import Page from "./layout/Page";
 import LoginPage from "@/features/auth/pages/LoginPage";
 import UploadPage from "@/features/upload/pages/UploadPage";
 import QuotePage from "@/features/quote/pages/QuotePage";
@@ -7,10 +6,7 @@ import CheckoutSuccessPage from "@/features/order/pages/CheckoutSuccessPage";
 import CheckoutCancelPage from "@/features/order/pages/CheckoutCancelPage";
 import OrdersPage from "@/features/order/pages/OrdersPage";
 import OrderStatusPage from "@/features/order/pages/OrderStatusPage";
-
-const NotReady = ({name}:{name:string}) => (
-    <Page title={name}><div>Сторінка в процесі.</div></Page>
-);
+import WorkshopPage from "@/features/workshop/pages/WorkshopPage";
 
 export const routes = [
     { path: "/login",    element: LoginPage },
@@ -21,5 +17,5 @@ export const routes = [
     { path: "/checkout/cancel", element: CheckoutCancelPage },
     { path: "/orders", element: OrdersPage },
     { path: "/orders/:id", element: OrderStatusPage },
-    { path: "/workshop", element: () => <NotReady name="Workshop" /> },
+    { path: "/workshop", element: WorkshopPage },
 ] as const;

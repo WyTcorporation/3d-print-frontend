@@ -2,6 +2,8 @@
 import Page from "@/app/layout/Page";
 import { api, API_BASE } from "@/shared/api/client";
 import { API } from "@/shared/api/endpoints";
+import Modal from "@/shared/ui/Modal";
+import { useModal } from "@/shared/ui/useModal";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -29,10 +31,10 @@ type JobDTO = {
     est_time_min: number;
     started_at?: string | null;
     finished_at?: string | null;
-    model: { id: number; preview_url?: string | null };
+    model: { id: number; preview_url?: string | null }; // preview_url можна ігнорити
 };
 
-// легкий SVG-плейсхолдер (без мережевих запитів)
+// Локальний SVG-плейсхолдер (без мережевих запитів)
 function PlaceholderBox({ className = "" }: { className?: string }) {
     return (
         <svg viewBox="0 0 64 64" className={className}>
@@ -41,6 +43,56 @@ function PlaceholderBox({ className = "" }: { className?: string }) {
             <circle cx="24" cy="22" r="5" fill="#e5e7eb" />
         </svg>
     );
+}
+
+/**
+ * Картинка з авторизацією: тягне blob через fetch із Bearer токеном,
+ * віддає тимчасовий object URL. Якщо впало — показує Placeholder.
+ */
+function AuthImage({
+                       path, // бековий шлях, напр. /v1/files/preview/11.png
+                       alt,
+                       className = "",
+                   }: {
+    path: string | null;
+    alt: string;
+    className?: string;
+}) {
+    const [src, setSrc] = useState<string | null>(null);
+
+    useEffect(() => {
+        let canceled = false;
+        let revoke: string | null = null;
+
+        async function run() {
+            if (!path) {
+                setSrc(null);
+                return;
+            }
+            try {
+                const token = localStorage.getItem("token") || "";
+                const res = await fetch(`${API_BASE}${path}`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                revoke = url;
+                if (!canceled) setSrc(url);
+            } catch {
+                if (!canceled) setSrc(null);
+            }
+        }
+
+        run();
+        return () => {
+            canceled = true;
+            if (revoke) URL.revokeObjectURL(revoke);
+        };
+    }, [path]);
+
+    if (!src) return <PlaceholderBox className={className} />;
+    return <img src={src} alt={alt} className={className} loading="lazy" />;
 }
 
 export default function OrderStatusPage() {
@@ -52,12 +104,13 @@ export default function OrderStatusPage() {
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
 
-    // якщо прев'ю впало — показуємо плейсхолдер і більше не намагаємось вантажити картинку
-    const [previewFail, setPreviewFail] = useState<Record<number, true>>({});
-
     // anti-flicker/anti-spam: кеш останньої відповіді та «активності»
     const snapshot = useRef<string>("");
     const activeRef = useRef<boolean>(false);
+
+    // перегляд у повний розмір
+    const viewer = useModal(false);
+    const [activeModelId, setActiveModelId] = useState<number | null>(null);
 
     const fmtTime = (s?: string | null) => (s ? new Date(s).toLocaleTimeString() : "—");
 
@@ -69,16 +122,15 @@ export default function OrderStatusPage() {
                 api<JobDTO[]>(API.orders.jobs(orderId)),
             ]);
 
-            // оновлюємо стан тільки якщо дані реально змінились
+            // оновлюємо стан лише якщо є реальні зміни
             const next = JSON.stringify({ o, j });
             if (next !== snapshot.current) {
                 setOrder(o);
-                // стабільний порядок — від меншого id до більшого
                 setJobs(j.slice().sort((a, b) => a.id - b.id));
                 snapshot.current = next;
             }
 
-            // чи потрібно далі полити (є не-фінальні стани)
+            // чи ще є активні задачі
             activeRef.current = j.some((x) =>
                 ["ready", "printing", "paused", "awaiting_preflight", "queued", "needs_attention"].includes(x.status)
             );
@@ -89,7 +141,7 @@ export default function OrderStatusPage() {
         }
     };
 
-    // один цикл оновлення без залежності від isActive (щоб не тригерити ефект)
+    // один цикл оновлення без залежностей від isActive
     useEffect(() => {
         if (!orderId) return;
 
@@ -188,44 +240,42 @@ export default function OrderStatusPage() {
                     </tr>
                     </thead>
                     <tbody>
-                    {jobs.map((j) => (
-                        <tr key={j.id} className="border-t">
-                            <td className="px-4 py-2">#{j.id}</td>
-                            <td className="px-4 py-2">
-                                <div className="h-14 w-14 border rounded overflow-hidden bg-white">
-                                    {!previewFail[j.id] && j.model?.preview_url ? (
-                                        <img
-                                            src={`${API_BASE}${j.model.preview_url}`}
+                    {jobs.map((j) => {
+                        const previewPath = API.files.preview(j.model.id);
+                        return (
+                            <tr key={j.id} className="border-t">
+                                <td className="px-4 py-2">#{j.id}</td>
+                                <td className="px-4 py-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setActiveModelId(j.model.id);
+                                            viewer.show();
+                                        }}
+                                        className="h-14 w-14 border rounded overflow-hidden bg-white cursor-zoom-in"
+                                        title="Відкрити у повний розмір"
+                                    >
+                                        <AuthImage
+                                            path={previewPath}
                                             alt={`Model ${j.model.id}`}
                                             className="h-full w-full object-contain"
-                                            loading="lazy"
-                                            onError={() =>
-                                                setPreviewFail((s) => ({ ...s, [j.id]: true }))
-                                            }
                                         />
-                                    ) : (
-                                        <PlaceholderBox className="h-full w-full" />
-                                    )}
-                                </div>
-                            </td>
-                            <td className="px-4 py-2">{j.status}</td>
-                            <td className="px-4 py-2">{j.printer_id ?? "—"}</td>
-                            <td className="px-4 py-2">
-                                <div className="w-40 h-2 rounded bg-neutral-200">
-                                    <div
-                                        className="h-2 rounded bg-neutral-800"
-                                        style={{ width: `${j.progress ?? 0}%` }}
-                                    />
-                                </div>
-                                <div className="text-xs text-neutral-500 mt-1">
-                                    {j.progress ?? 0}%
-                                </div>
-                            </td>
-                            <td className="px-4 py-2">{j.est_time_min ?? "—"}</td>
-                            <td className="px-4 py-2">{fmtTime(j.started_at)}</td>
-                            <td className="px-4 py-2">{fmtTime(j.finished_at)}</td>
-                        </tr>
-                    ))}
+                                    </button>
+                                </td>
+                                <td className="px-4 py-2">{j.status}</td>
+                                <td className="px-4 py-2">{j.printer_id ?? "—"}</td>
+                                <td className="px-4 py-2">
+                                    <div className="w-40 h-2 rounded bg-neutral-200">
+                                        <div className="h-2 rounded bg-neutral-800" style={{ width: `${j.progress ?? 0}%` }} />
+                                    </div>
+                                    <div className="text-xs text-neutral-500 mt-1">{j.progress ?? 0}%</div>
+                                </td>
+                                <td className="px-4 py-2">{j.est_time_min ?? "—"}</td>
+                                <td className="px-4 py-2">{fmtTime(j.started_at)}</td>
+                                <td className="px-4 py-2">{fmtTime(j.finished_at)}</td>
+                            </tr>
+                        );
+                    })}
                     {!jobs.length && (
                         <tr>
                             <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
@@ -236,6 +286,26 @@ export default function OrderStatusPage() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Модалка повнорозмірного прев’ю */}
+            <Modal
+                open={viewer.open}
+                onClose={viewer.hide}
+                title={activeModelId ? `Модель #${activeModelId}` : "Прев’ю"}
+                footer={<button onClick={viewer.hide} className="px-3 py-1.5 rounded bg-black text-white">Закрити</button>}
+            >
+                <div className="flex items-center justify-center">
+                    {activeModelId ? (
+                        <AuthImage
+                            path={API.files.preview(activeModelId)}
+                            alt={`Model ${activeModelId}`}
+                            className="max-h-[80vh] max-w-[90vw] object-contain"
+                        />
+                    ) : (
+                        <PlaceholderBox className="h-[60vh] w-[70vw]" />
+                    )}
+                </div>
+            </Modal>
         </Page>
     );
 }
