@@ -9,11 +9,15 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
     const ct = res.headers.get("content-type") || "";
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (!res.ok) {
+        if (res.status === 401) {
+            localStorage.removeItem("token");
+            if (location.pathname !== "/login") location.href = "/login";
+        }
+        const ct = res.headers.get("content-type") || "";
+        const data = ct.includes("application/json") ? await res.json() : await res.text();
         const reqId = res.headers.get("X-Request-ID") || undefined;
         const msg = (data && (data.message || data.detail)) || res.statusText;
-        const e: any = new Error(msg);
-        if (reqId) e.requestId = reqId;
-        throw e;
+        const e: any = new Error(msg); if (reqId) e.requestId = reqId; throw e;
     }
     return data as T;
 }

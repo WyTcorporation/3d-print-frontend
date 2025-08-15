@@ -64,6 +64,22 @@ export default function CartPage() {
         }
     }
 
+    async function setQty(itemId: number, next: number) {
+        setBusy(true);
+        try {
+            await api(API.cart.update(itemId), {
+                method: "PATCH",
+                body: JSON.stringify({ qty: Math.max(0, Number(next || 0)) }),
+            });
+            await load();
+        } catch (e: any) {
+            setError(e?.message || "Не вдалося оновити кількість");
+            failed.show();
+        } finally {
+            setBusy(false);
+        }
+    }
+
     async function checkout() {
         if (!data || !data.items?.length) return;
         setBusy(true);
@@ -119,7 +135,30 @@ export default function CartPage() {
                                 <td className="py-2 pr-4">
                                     {[it.quote.material?.name, it.quote.material?.color].filter(Boolean).join(" — ")}
                                 </td>
-                                <td className="py-2 pr-4 text-center">{it.qty}</td>
+                                <td className="py-2 pr-4 text-center">
+                                    <div className="inline-flex items-center gap-1">
+                                        <button
+                                            className="px-2 py-1 rounded border text-xs"
+                                            disabled={busy}
+                                            onClick={() => setQty(it.id, it.qty - 1)}
+                                            title="–1"
+                                        >−</button>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={it.qty}
+                                            onChange={(e) => setQty(it.id, Number(e.target.value))}
+                                            className="w-16 rounded border px-2 py-1 text-center"
+                                            disabled={busy}
+                                        />
+                                        <button
+                                            className="px-2 py-1 rounded border text-xs"
+                                            disabled={busy}
+                                            onClick={() => setQty(it.id, it.qty + 1)}
+                                            title="+1"
+                                        >+</button>
+                                    </div>
+                                </td>
                                 <td className="py-2 pr-4 text-right">{it.unit_price.toFixed(2)}</td>
                                 <td className="py-2 pr-4 text-right">{it.subtotal.toFixed(2)}</td>
                                 <td className="py-2">

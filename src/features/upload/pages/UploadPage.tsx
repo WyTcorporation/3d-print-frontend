@@ -4,7 +4,7 @@ import { API } from "@/shared/api/endpoints";
 import Modal from "@/shared/ui/Modal";
 import { useModal } from "@/shared/ui/useModal";
 import ProgressBar from "@/shared/ui/ProgressBar";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useRef, useState } from "react";
 
 // просте визначення типу вмісту по розширенню (коли file.type порожній)
@@ -43,7 +43,7 @@ function putWithProgress(url: string, file: File, contentType: string, onProgres
 }
 
 export default function UploadPage() {
-    const nav = useNavigate();
+    // const nav = useNavigate();
     const fileInput = useRef<HTMLInputElement | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [progress, setProgress] = useState(0);

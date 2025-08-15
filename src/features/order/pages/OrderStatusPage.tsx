@@ -1,11 +1,11 @@
-// src/features/order/pages/OrderStatusPage.tsx
 import Page from "@/app/layout/Page";
-import { api, API_BASE } from "@/shared/api/client";
+import { api } from "@/shared/api/client";
 import { API } from "@/shared/api/endpoints";
 import Modal from "@/shared/ui/Modal";
 import { useModal } from "@/shared/ui/useModal";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import AuthImage from "@/shared/ui/AuthImage";
 
 type OrderDTO = {
     id: number;
@@ -43,56 +43,6 @@ function PlaceholderBox({ className = "" }: { className?: string }) {
             <circle cx="24" cy="22" r="5" fill="#e5e7eb" />
         </svg>
     );
-}
-
-/**
- * Картинка з авторизацією: тягне blob через fetch із Bearer токеном,
- * віддає тимчасовий object URL. Якщо впало — показує Placeholder.
- */
-function AuthImage({
-                       path, // бековий шлях, напр. /v1/files/preview/11.png
-                       alt,
-                       className = "",
-                   }: {
-    path: string | null;
-    alt: string;
-    className?: string;
-}) {
-    const [src, setSrc] = useState<string | null>(null);
-
-    useEffect(() => {
-        let canceled = false;
-        let revoke: string | null = null;
-
-        async function run() {
-            if (!path) {
-                setSrc(null);
-                return;
-            }
-            try {
-                const token = localStorage.getItem("token") || "";
-                const res = await fetch(`${API_BASE}${path}`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                revoke = url;
-                if (!canceled) setSrc(url);
-            } catch {
-                if (!canceled) setSrc(null);
-            }
-        }
-
-        run();
-        return () => {
-            canceled = true;
-            if (revoke) URL.revokeObjectURL(revoke);
-        };
-    }, [path]);
-
-    if (!src) return <PlaceholderBox className={className} />;
-    return <img src={src} alt={alt} className={className} loading="lazy" />;
 }
 
 export default function OrderStatusPage() {

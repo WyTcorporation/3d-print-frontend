@@ -14,6 +14,7 @@ export const API = {
         me: "/v1/cart",
         add: (quoteId: number) => `/v1/cart/add/${quoteId}`,
         remove: (itemId: number) => `/v1/cart/item/${itemId}`,
+        update: (itemId: number) => `/v1/cart/item/${itemId}`,
     },
 
     orders: {
