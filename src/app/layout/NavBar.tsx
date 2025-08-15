@@ -1,5 +1,6 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import LanguageSwitcher from "@/shared/ui/LanguageSwitcher";
+import { isAdmin } from "@/shared/auth/role";
 
 function Item({ to, children }: { to: string; children: React.ReactNode }) {
     return (
@@ -33,7 +34,7 @@ export default function NavBar() {
                     <Item to="/quote">Quote</Item>
                     <Item to="/cart">Cart</Item>
                     <Item to="/orders">Order</Item>
-                    <Item to="/workshop">Workshop</Item>
+                    {isAdmin() && <Item to="/workshop">Workshop</Item>}
                 </nav>
                 <div className="ml-auto flex items-center gap-3">
                     <LanguageSwitcher />

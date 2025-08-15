@@ -6,7 +6,7 @@ import CheckoutSuccessPage from "@/features/order/pages/CheckoutSuccessPage";
 import CheckoutCancelPage from "@/features/order/pages/CheckoutCancelPage";
 import OrdersPage from "@/features/order/pages/OrdersPage";
 import OrderStatusPage from "@/features/order/pages/OrderStatusPage";
-import WorkshopPage from "@/features/workshop/pages/WorkshopPage";
+import WorkshopRoute from "@/features/workshop/pages/WorkshopRoute";
 
 export const routes = [
     { path: "/login",    element: LoginPage },
@@ -17,5 +17,5 @@ export const routes = [
     { path: "/checkout/cancel", element: CheckoutCancelPage },
     { path: "/orders", element: OrdersPage },
     { path: "/orders/:id", element: OrderStatusPage },
-    { path: "/workshop", element: WorkshopPage },
+    { path: "/workshop", element: WorkshopRoute },
 ] as const;
