@@ -1,5 +1,5 @@
 import Page from "@/app/layout/Page";
-import { api } from "@/shared/api/client";
+import { api } from "@/shared/api/client.ts";
 import { API } from "@/shared/api/endpoints";
 import Modal from "@/shared/ui/Modal";
 import { useModal } from "@/shared/ui/useModal";
@@ -76,7 +76,7 @@ export default function UploadPage() {
             const contentType = sniffContentType(file);
 
             // 1) presign
-            const presign = await api<{ url: string; key: string; bucket: string }>(API.presign, {
+            const presign = await api<{ url: string; key: string; bucket: string }>(API.files.presignGet, {
                 method: "POST",
                 body: JSON.stringify({ content_type: contentType }),
             });
@@ -88,7 +88,7 @@ export default function UploadPage() {
             const complete = await api<{
                 upload: { id: number; key: string; bucket: string; status: string };
                 model:  { id: number; status: string };
-            }>(API.complete, {
+            }>(API.files.complete, {
                 method: "POST",
                 body: JSON.stringify({ key: presign.key, content_type: contentType }),
             });

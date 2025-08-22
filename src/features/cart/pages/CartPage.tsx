@@ -3,7 +3,7 @@ import { api } from "@/shared/api/client";
 import { API } from "@/shared/api/endpoints";
 import Modal from "@/shared/ui/Modal";
 import { useModal } from "@/shared/ui/useModal";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocale } from "@/shared/i18n/LocaleContext";
 
 type CartItem = {
@@ -23,15 +23,20 @@ type CartItem = {
 type CartResp = {
     id: number | null;
     items: CartItem[];
-    total_eur: string;       // сума за кошик
+    currency?: string;          // "EUR"
+    subtotal_eur?: string;      // "100.00"
+    discount_eur?: string;      // "10.00"
+    total_eur: string;          // "90.00"
+    coupon?: { code: string; description?: string } | null;
 };
-
 export default function CartPage() {
     const { locale } = useLocale();
     const [data, setData] = useState<CartResp | null>(null);
     const [loading, setLoading] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [couponCode, setCouponCode] = useState("");
+    const [applying, setApplying] = useState(false);
 
     const redirecting = useModal(false);
     const failed = useModal(false);
@@ -50,6 +55,34 @@ export default function CartPage() {
     }
 
     useEffect(() => { load(); }, [locale]);
+
+    async function applyCoupon() {
+        if (!couponCode.trim()) return;
+        setApplying(true);
+        try {
+            await api(API.cart.applyCoupon, { method: "POST", body: JSON.stringify({ code: couponCode.trim() }) });
+            await load();            // перезавантажимо підсумки
+            setCouponCode("");
+        } catch (e:any) {
+            setError(e?.message || "Купон не застосовано");
+            failed.show();
+        } finally {
+            setApplying(false);
+        }
+    }
+
+    async function removeCoupon() {
+        setApplying(true);
+        try {
+            await api(API.cart.removeCoupon, { method: "DELETE" });
+            await load();
+        } catch (e:any) {
+            setError(e?.message || "Не вдалося прибрати купон");
+            failed.show();
+        } finally {
+            setApplying(false);
+        }
+    }
 
     async function removeItem(id: number) {
         setBusy(true);
@@ -85,22 +118,20 @@ export default function CartPage() {
         setBusy(true);
         redirecting.show();
         try {
-            // 1) створюємо Order з кошика
+
             const order = await api<{ order_id: number; total_eur: string; status: string }>(
-                API.orders.checkout,
+                API.orders.checkoutFromCart,
                 { method: "POST" }
             );
 
-            // збережемо для екрана успіху
             sessionStorage.setItem("last_order_id", String(order.order_id));
 
-            // 2) отримуємо Stripe checkout session URL
+            // 2) Stripe checkout
             const pay = await api<{ checkout_url: string; session_id: string }>(
                 API.payments.checkout,
                 { method: "POST", body: JSON.stringify({ order_id: order.order_id }) }
             );
 
-            // 3) редірект на Stripe
             window.location.href = pay.checkout_url;
         } catch (e: any) {
             redirecting.hide();
@@ -111,7 +142,10 @@ export default function CartPage() {
         }
     }
 
-    const total = useMemo(() => data?.total_eur ?? "0.00", [data]);
+    // const total = useMemo(() => data?.total_eur ?? "0.00", [data]);
+    const subtotal = data?.subtotal_eur ?? null;
+    const discount = data?.discount_eur ?? null;
+    const total = data?.total_eur ?? "0.00";
 
     return (
         <Page title="Cart">
@@ -173,14 +207,56 @@ export default function CartPage() {
                             </tr>
                         ))}
                         <tr>
-                            <td className="py-2 pr-4" colSpan={4}><b>Всього</b></td>
-                            <td className="py-2 pr-4 text-right"><b>{total}</b></td>
+                            <td className="py-2 pr-4 text-right" colSpan={4}><b>Разом</b></td>
+                            <td className="py-2 pr-4 text-right"><b>{subtotal ?? total}</b></td>
                             <td></td>
                         </tr>
+                        {discount && (
+                            <tr>
+                                <td className="py-2 pr-4 text-right text-emerald-700" colSpan={4}>Знижка</td>
+                                <td className="py-2 pr-4 text-right text-emerald-700">−{discount}</td>
+                                <td></td>
+                            </tr>
+                        )}
+                        {subtotal && (
+                            <tr>
+                                <td className="py-2 pr-4 text-right" colSpan={4}><b>До сплати</b></td>
+                                <td className="py-2 pr-4 text-right"><b>{total}</b></td>
+                                <td></td>
+                            </tr>
+                        )}
                         </tbody>
                     </table>
                 </div>
-
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {!data?.coupon ? (
+                        <>
+                            <input
+                                value={couponCode}
+                                onChange={e => setCouponCode(e.target.value)}
+                                placeholder="Купон"
+                                className="rounded border px-3 py-2 text-sm"
+                            />
+                            <button
+                                onClick={applyCoupon}
+                                disabled={busy || applying || !couponCode.trim()}
+                                className="px-3 py-2 rounded-md border text-sm disabled:opacity-50"
+                            >
+                                Застосувати
+                            </button>
+                        </>
+                    ) : (
+                        <div className="flex items-center gap-2 text-sm">
+      <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5">
+        Купон: {data.coupon.code}
+      </span>
+                            {data.coupon.description && <span className="text-neutral-600">— {data.coupon.description}</span>}
+                            <button onClick={removeCoupon} disabled={busy || applying} className="ml-2 underline">
+                                Прибрати
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <div className="mt-4 flex gap-3">
                     <button
                         onClick={checkout}

@@ -1,4 +1,4 @@
-import AdminOnly from "@/shared/auth/AdminOnly";
+import AdminOnly from "@/shared/routing/AdminOnly.tsx";
 import WorkshopPage from "./WorkshopPage";
 
 export default function WorkshopRoute() {

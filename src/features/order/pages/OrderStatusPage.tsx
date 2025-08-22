@@ -191,7 +191,7 @@ export default function OrderStatusPage() {
                     </thead>
                     <tbody>
                     {jobs.map((j) => {
-                        const previewPath = API.files.preview(j.model.id);
+                        const previewPath = API.files.previewPng(j.model.id);
                         return (
                             <tr key={j.id} className="border-t">
                                 <td className="px-4 py-2">#{j.id}</td>
@@ -247,7 +247,7 @@ export default function OrderStatusPage() {
                 <div className="flex items-center justify-center">
                     {activeModelId ? (
                         <AuthImage
-                            path={API.files.preview(activeModelId)}
+                            path={API.files.previewPng(activeModelId)}
                             alt={`Model ${activeModelId}`}
                             className="max-h-[80vh] max-w-[90vw] object-contain"
                         />

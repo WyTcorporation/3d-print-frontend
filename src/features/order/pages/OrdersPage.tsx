@@ -1,5 +1,5 @@
 import Page from "@/app/layout/Page";
-import { api } from "@/shared/api/client";
+import { api } from "@/shared/api/client.ts";
 import { API } from "@/shared/api/endpoints";
 import ProgressBar from "@/shared/ui/ProgressBar";
 import { useEffect,  useState } from "react";
@@ -34,7 +34,7 @@ export default function OrdersPage() {
         (async () => {
             try {
                 setLoading(true);
-                const list = await api<OrderRow[]>(API.orders.list);
+                const list = await api<OrderRow[]>(API.orders.listMine);
                 setOrders(list);
             } catch (e: any) {
                 setErr(e?.message || "Не вдалося завантажити замовлення");

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE } from "@/shared/api/client";
+import { API_BASE } from "@/shared/api/client.ts";
 
 /**
  * Картинка з авторизацією: тягне blob через fetch із Bearer токеном,

@@ -1,10 +1,11 @@
+// src/features/quote/pages/QuotePage.tsx
 import Page from "@/app/layout/Page";
 import { api, API_BASE } from "@/shared/api/client";
 import { API } from "@/shared/api/endpoints";
 import Modal from "@/shared/ui/Modal";
 import { useModal } from "@/shared/ui/useModal";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ButtonHTMLAttributes } from "react";
 import { useLocale } from "@/shared/i18n/LocaleContext";
 
 /* ───────── helpers ───────── */
@@ -14,6 +15,7 @@ type QuoteResp = {
     id: number;
     price_eur: string;
     settings: any;
+    ttl_expires_at?: string | null; // для таймера кошика
     breakdown: {
         qty: number;
         unit_price_eur: number;
@@ -25,9 +27,8 @@ type QuoteResp = {
     breakdown_labels?: Record<string, string>;
 };
 
-const INFILL_PRESETS = ["15% grid", "20% gyroid", "25% cubic", "30% cubic", "40% gyroid"];
+const INFILL_PRESETS = ["15% grid","20% gyroid","25% cubic","30% cubic","40% gyroid"];
 
-/** простий placeholder-бокс (коли прев’ю немає) */
 function PlaceholderBox({ className = "" }: { className?: string }) {
     return (
         <svg viewBox="0 0 64 64" className={className}>
@@ -38,19 +39,8 @@ function PlaceholderBox({ className = "" }: { className?: string }) {
     );
 }
 
-/**
- * Картинка з авторизацією: тягне blob через fetch із Bearer токеном,
- * віддає тимчасовий object URL. Якщо впало — показує Placeholder.
- */
-function AuthImage({
-                       path,
-                       alt,
-                       className = "",
-                   }: {
-    path: string | null;
-    alt: string;
-    className?: string;
-}) {
+/** Картинка з авторизацією (Bearer) через blob + objectURL */
+function AuthImage({ path, alt, className = "" }: { path: string | null; alt: string; className?: string }) {
     const [src, setSrc] = useState<string | null>(null);
 
     useEffect(() => {
@@ -58,10 +48,7 @@ function AuthImage({
         let revoke: string | null = null;
 
         async function run() {
-            if (!path) {
-                setSrc(null);
-                return;
-            }
+            if (!path) { setSrc(null); return; }
             try {
                 const token = localStorage.getItem("token") || "";
                 const res = await fetch(`${API_BASE}${path}`, {
@@ -78,29 +65,19 @@ function AuthImage({
         }
 
         run();
-        return () => {
-            canceled = true;
-            if (revoke) URL.revokeObjectURL(revoke);
-        };
+        return () => { canceled = true; if (revoke) URL.revokeObjectURL(revoke); };
     }, [path]);
 
     if (!src) return <PlaceholderBox className={className} />;
     return <img src={src} alt={alt} className={className} loading="lazy" />;
 }
 
-/** компактна кнопка, щоб не «роздувалась» */
-function Btn({
-                 children,
-                 className = "",
-                 ...rest
-             }: React.ButtonHTMLAttributes<HTMLButtonElement> & { className?: string }) {
+/** компактна кнопка */
+function Btn({ className = "", children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
     return (
         <button
             {...rest}
-            className={
-                "inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium " +
-                className
-            }
+            className={"inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium " + className}
         >
             {children}
         </button>
@@ -118,20 +95,18 @@ export default function QuotePage() {
     const [materials, setMaterials] = useState<Material[]>([]);
     const [loadingMats, setLoadingMats] = useState(true);
     const [labels, setLabels] = useState<Record<string, string>>({});
-    const [form, setForm] = useState({
-        material_id: 0,
-        layer_height: 0.2,
-        infill: "20% gyroid",
-        qty: 1,
-    });
+    const [form, setForm] = useState({ material_id: 0, layer_height: 0.2, infill: "20% gyroid", qty: 1 });
 
     const [busy, setBusy] = useState(false);
     const [quote, setQuote] = useState<QuoteResp | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const added = useModal(false); // «додано в кошик»
-    const failed = useModal(false); // помилка
-    const preview = useModal(false); // прев’ю повний розмір
+    const added = useModal(false);          // модалка «додано в кошик»
+    const failed = useModal(false);         // модалка помилки
+    const previewModal = useModal(false);   // модалка прев’ю
+
+    // TTL лічильник у секундах (для quote)
+    const [ttlLeft, setTtlLeft] = useState<number | null>(null);
 
     // 1) матеріали
     useEffect(() => {
@@ -140,16 +115,11 @@ export default function QuotePage() {
                 setLoadingMats(true);
                 const url = API.catalog.materials(locale);
                 const mats = await api<Material[]>(url);
-                const sorted = (mats || [])
-                    .slice()
-                    .sort(
-                        (a, b) =>
-                            (a.name || "").localeCompare(b.name || "", locale) ||
-                            (a.color || "").localeCompare(b.color || "", locale),
-                    );
+                const sorted = (mats || []).slice().sort(
+                    (a, b) => (a.name || "").localeCompare(b.name || "", locale) || (a.color || "").localeCompare(b.color || "", locale),
+                );
                 setMaterials(sorted);
-                if (sorted.length && !form.material_id)
-                    setForm((f) => ({ ...f, material_id: sorted[0].id }));
+                if (sorted.length && !form.material_id) setForm(f => ({ ...f, material_id: sorted[0].id })); // ← виправлено спред
             } catch (e: any) {
                 setError(e?.message || "Не вдалося завантажити матеріали");
                 failed.show();
@@ -160,8 +130,7 @@ export default function QuotePage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [locale]);
 
-    const onChange = (k: keyof typeof form, v: any) =>
-        setForm((s) => ({ ...s, [k]: v }));
+    const onChange = (k: keyof typeof form, v: any) => setForm(s => ({ ...s, [k]: v })); // ← виправлено спред
 
     // 2) розрахунок
     const makeQuote = async () => {
@@ -170,9 +139,7 @@ export default function QuotePage() {
             failed.show();
             return;
         }
-        setBusy(true);
-        setError(null);
-        setQuote(null);
+        setBusy(true); setError(null); setQuote(null);
         try {
             const payload = {
                 model_id: modelId,
@@ -181,10 +148,10 @@ export default function QuotePage() {
                 infill: form.infill,
                 qty: Number(form.qty),
             };
-            const res = await api<QuoteResp>(
-                API.quotes + `?locale=${encodeURIComponent(locale)}`,
-                { method: "POST", body: JSON.stringify(payload) },
-            );
+            const res = await api<QuoteResp>(API.quotes + `?locale=${encodeURIComponent(locale)}`, {
+                method: "POST",
+                body: JSON.stringify(payload),
+            });
             setQuote(res);
             setLabels(res.breakdown_labels || {});
         } catch (e: any) {
@@ -195,14 +162,29 @@ export default function QuotePage() {
         }
     };
 
-    // 3) додати в кошик
+    // 2.1) TTL-таймер (поза makeQuote!) — відлічуємо до quote.ttl_expires_at
+    useEffect(() => {
+        if (!quote?.ttl_expires_at) { setTtlLeft(null); return; }
+        const ends = new Date(quote.ttl_expires_at).getTime();
+        const tick = () => setTtlLeft(Math.max(0, Math.floor((ends - Date.now()) / 1000)));
+        tick();
+        const t = setInterval(tick, 1000);
+        return () => clearInterval(t);
+    }, [quote?.ttl_expires_at]);
+
+    const fmtTTL = (s: number) => {
+        const m = Math.floor(s / 60), ss = s % 60;
+        return `${m}:${ss.toString().padStart(2, "0")}`;
+    };
+
+    // 3) додати в кошик (новий змішаний cart API)
     const addToCart = async () => {
         if (!quote?.id) return;
         setBusy(true);
         try {
-            await api(API.cart.add(quote.id), {
+            await api(API.cart.addItem, {
                 method: "POST",
-                body: JSON.stringify({ qty: form.qty }),
+                body: JSON.stringify({ type: "print", quote_id: quote.id, qty: Number(form.qty || 1) }),
             });
             added.show();
         } catch (e: any) {
@@ -213,28 +195,22 @@ export default function QuotePage() {
         }
     };
 
-    // const breakdown = useMemo(() => {
-    //     if (!quote) return null;
-    //     const b = quote.breakdown;
-    //     const list = Object.entries(b.costs || {});
-    //     return { ...b, list };
-    // }, [quote]);
-
     const previewPath = modelId ? `/v1/files/preview/${modelId}.png` : null;
+
+    const breakdownList = useMemo(
+        () => quote ? Object.entries(quote.breakdown?.costs || {}) : [],
+        [quote]
+    );
 
     return (
         <Page title="Quote">
             {!modelId && (
                 <div className="mb-4 p-3 rounded border border-amber-300 bg-amber-50 text-sm">
-                    Немає параметра <code>?model=ID</code>.{" "}
-                    <Link className="underline" to="/upload">
-                        Завантаж модель
-                    </Link>{" "}
-                    і повертайся.
+                    Немає параметра <code>?model=ID</code>. <Link className="underline" to="/upload">Завантаж модель</Link> і повертайся.
                 </div>
             )}
 
-            {/* компактна двоколонка: форма + вузький aside 20rem */}
+            {/* компактна двоколонка: форма + вузький aside */}
             <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-6">
                 {/* форма */}
                 <div className="grid gap-3">
@@ -243,13 +219,11 @@ export default function QuotePage() {
                         <select
                             disabled={loadingMats || busy}
                             value={form.material_id}
-                            onChange={(e) => onChange("material_id", Number(e.target.value))}
+                            onChange={e => onChange("material_id", Number(e.target.value))}
                             className="mt-1 block w-full rounded-md border px-3 py-2"
                         >
-                            {materials.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                    {[m.name, m.color].filter(Boolean).join(" — ")}
-                                </option>
+                            {materials.map(m => (
+                                <option key={m.id} value={m.id}>{[m.name, m.color].filter(Boolean).join(" — ")}</option>
                             ))}
                         </select>
                     </label>
@@ -257,12 +231,9 @@ export default function QuotePage() {
                     <label className="block">
                         <span className="text-sm">Висота шару (мм)</span>
                         <input
-                            type="number"
-                            step="0.01"
-                            min="0.06"
-                            max="0.4"
+                            type="number" step="0.01" min="0.06" max="0.4"
                             value={form.layer_height}
-                            onChange={(e) => onChange("layer_height", Number(e.target.value))}
+                            onChange={e => onChange("layer_height", Number(e.target.value))}
                             className="mt-1 block w-full rounded-md border px-3 py-2"
                         />
                     </label>
@@ -271,48 +242,39 @@ export default function QuotePage() {
                         <span className="text-sm">Заповнення</span>
                         <select
                             value={form.infill}
-                            onChange={(e) => onChange("infill", e.target.value)}
+                            onChange={e => onChange("infill", e.target.value)}
                             className="mt-1 block w-full rounded-md border px-3 py-2"
                         >
-                            {INFILL_PRESETS.map((x) => (
-                                <option key={x} value={x}>
-                                    {x}
-                                </option>
-                            ))}
+                            {INFILL_PRESETS.map(x => <option key={x} value={x}>{x}</option>)}
                         </select>
                     </label>
 
                     <label className="block">
                         <span className="text-sm">Кількість</span>
                         <input
-                            type="number"
-                            min={1}
+                            type="number" min={1}
                             value={form.qty}
-                            onChange={(e) => onChange("qty", Number(e.target.value || 1))}
+                            onChange={e => onChange("qty", Number(e.target.value || 1))}
                             className="mt-1 block w-full rounded-md border px-3 py-2"
                         />
                     </label>
 
                     <div className="flex gap-2">
-                        <Btn
-                            onClick={makeQuote}
-                            disabled={busy || !modelId}
-                            className="bg-black text-white disabled:opacity-50"
-                        >
+                        <Btn onClick={makeQuote} disabled={busy || !modelId} className="bg-black text-white disabled:opacity-50">
                             {busy ? "Рахуємо…" : "Розрахувати"}
                         </Btn>
 
                         {quote?.id && (
-                            <Btn onClick={addToCart} disabled={busy} className="border">
+                            <Btn onClick={addToCart} disabled={busy || (ttlLeft !== null && ttlLeft <= 0)} className="border">
                                 Додати в кошик
                             </Btn>
                         )}
                     </div>
                 </div>
 
-                {/* aside 20rem — компактні картки з фіксованими min-height */}
+                {/* aside 20rem — компактні картки з фіксованою мін. висотою */}
                 <div className="space-y-3">
-                    {/* ціна */}
+                    {/* ціна + TTL */}
                     <section className="rounded-lg border p-3 min-h-[136px]">
                         {!quote ? (
                             <div className="animate-pulse space-y-2">
@@ -322,7 +284,14 @@ export default function QuotePage() {
                             </div>
                         ) : (
                             <>
-                                <div className="text-base font-medium">Ціна: {quote.price_eur} €</div>
+                                <div className="flex items-center gap-2">
+                                    <div className="text-base font-medium">Ціна: {quote.price_eur} €</div>
+                                    {ttlLeft !== null && (
+                                        <span className={"text-[11px] px-2 py-0.5 rounded " + (ttlLeft > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>
+                      {ttlLeft > 0 ? `дійсна ${fmtTTL(ttlLeft)}` : "пропозиція прострочена"}
+                    </span>
+                                    )}
+                                </div>
                                 <div className="text-xs text-neutral-600">
                                     за {quote.breakdown.qty} шт · {quote.breakdown.unit_price_eur} € / шт
                                 </div>
@@ -331,16 +300,12 @@ export default function QuotePage() {
                                     <div>Філамент: {quote.breakdown.est_filament_g} г</div>
                                 </div>
 
-                                {quote.breakdown.costs && (
+                                {breakdownList.length > 0 && (
                                     <details className="mt-2 text-xs">
-                                        <summary className="cursor-pointer select-none text-neutral-700">
-                                            Деталі собівартості
-                                        </summary>
+                                        <summary className="cursor-pointer select-none text-neutral-700">Деталі собівартості</summary>
                                         <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                                            {Object.entries(quote.breakdown.costs).map(([k, v]) => (
-                                                <li key={k}>
-                                                    {(labels[k] ?? k)}: {k === "margin_mult" ? `×${v}` : (v as any)}
-                                                </li>
+                                            {breakdownList.map(([k, v]) => (
+                                                <li key={k}>{(labels[k] ?? k)}: {k === "margin_mult" ? `×${v}` : String(v)}</li>
                                             ))}
                                         </ul>
                                     </details>
@@ -354,19 +319,14 @@ export default function QuotePage() {
                         <div className="mb-1 text-sm font-medium">Прев’ю моделі</div>
                         <button
                             type="button"
-                            onClick={preview.show}
+                            onClick={previewModal.show}
                             className="group w-full h-[170px] rounded border bg-white overflow-hidden flex items-center justify-center cursor-zoom-in"
                             title="Збільшити"
                         >
-                            {quote ? (
-                                <AuthImage
-                                    path={previewPath}
-                                    alt={`Model ${modelId}`}
-                                    className="h-full w-full object-contain group-hover:opacity-90"
-                                />
-                            ) : (
-                                <div className="h-full w-full bg-neutral-100" />
-                            )}
+                            {quote
+                                ? <AuthImage path={previewPath} alt={`Model ${modelId}`} className="h-full w-full object-contain group-hover:opacity-90" />
+                                : <div className="h-full w-full bg-neutral-100" />
+                            }
                         </button>
                         <div className="mt-1 text-[11px] text-neutral-500">Клік, щоб збільшити</div>
                     </section>
@@ -380,37 +340,18 @@ export default function QuotePage() {
                 title="Додано в кошик"
                 footer={
                     <>
-                        <Btn onClick={added.hide} className="border">
-                            Продовжити
-                        </Btn>
-                        <Btn onClick={() => nav("/cart")} className="bg-black text-white">
-                            Перейти в кошик
-                        </Btn>
+                        <Btn onClick={added.hide} className="border">Продовжити</Btn>
+                        <Btn onClick={() => nav("/cart")} className="bg-black text-white">Перейти в кошик</Btn>
                     </>
                 }
             >
-                <div className="text-sm text-neutral-700">
-                    Пропозицію додано. Можеш оформити замовлення в кошику.
-                </div>
+                <div className="text-sm text-neutral-700">Пропозицію додано. Можеш оформити замовлення в кошику.</div>
             </Modal>
 
-            {/* модалка прев’ю */}
-            <Modal
-                open={preview.open}
-                onClose={preview.hide}
-                title="Прев’ю моделі"
-                footer={
-                    <Btn onClick={preview.hide} className="bg-black text-white">
-                        Закрити
-                    </Btn>
-                }
-            >
+            {/* модалка прев’ю (повний розмір) */}
+            <Modal open={previewModal.open} onClose={previewModal.hide} title="Прев’ю моделі" footer={<Btn onClick={previewModal.hide} className="bg-black text-white">Закрити</Btn>}>
                 <div className="aspect-[4/3] w-full max-h-[70vh] overflow-hidden rounded border bg-white">
-                    <AuthImage
-                        path={previewPath}
-                        alt={`Model ${modelId}`}
-                        className="w-full h-full object-contain"
-                    />
+                    <AuthImage path={previewPath} alt={`Model ${modelId}`} className="w-full h-full object-contain" />
                 </div>
             </Modal>
 
@@ -419,11 +360,7 @@ export default function QuotePage() {
                 open={failed.open}
                 onClose={failed.hide}
                 title="Помилка"
-                footer={
-                    <Btn onClick={failed.hide} className="bg-black text-white">
-                        Гаразд
-                    </Btn>
-                }
+                footer={<Btn onClick={failed.hide} className="bg-black text-white">Гаразд</Btn>}
             >
                 <div className="text-sm text-red-700">{error}</div>
             </Modal>

@@ -1,0 +1,154 @@
+@baseUrl = http://localhost:8000/v1
+
+### 0) Login (отримати JWT)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "user"
+}
+
+### 0.1) Health / Ready
+GET {{baseUrl}}/health/healthz
+
+GET {{baseUrl}}/health/readyz
+
+### 1) Catalog — базовий пошук/сорт/пагіна
+GET {{baseUrl}}/catalog?q=holder&sort=newest&page=1&limit=20
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 1.1) Catalog — EAV фільтри (color + boolean + numeric range)
+GET {{baseUrl}}/catalog?category=organizers&attr.color=black&attrs_boolean[]=waterproof&attrs_number[weight_min]=10&attrs_number[weight_max]=200
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 1.2) Facets (self-exclusion лічильники)
+GET {{baseUrl}}/catalog/facets?category=organizers&attr.color=black
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 1.3) Product detail (slug)
+GET {{baseUrl}}/catalog/products/desk-cable-holder
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 2) Models — список моїх (якщо у вас /models3d — змініть префікс)
+GET {{baseUrl}}/models
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 2.1) Presign для Upload (модель)
+POST {{baseUrl}}/files/presign-upload
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "key": "models/my_model.stl",
+  "content_type": "model/stl"
+}
+
+### 2.1.1) (Крок PUT у S3/MinIO — вручну через curl; приклад)
+# curl -X PUT "https://S3-ENDPOINT/models/my_model.stl" \
+#   -H "Content-Type: model/stl" \
+#   --data-binary @./path/to/my_model.stl
+
+### 3) Quote для моделі
+POST {{baseUrl}}/quotes
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "model_id": 1,
+  "material_id": 1,
+  "layer_height": 0.2,
+  "infill": "20% gyroid",
+  "qty": 2
+}
+
+### 3.1) Додати Quote у кошик
+POST {{baseUrl}}/cart/add/quote/1
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "qty": 2
+}
+
+### 4) Кошик — перегляд
+GET {{baseUrl}}/cart
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 4.1) Застосувати купон
+POST {{baseUrl}}/cart/apply-coupon
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "code": "TEST10"
+}
+
+### 4.2) Прибрати купон
+DELETE {{baseUrl}}/cart/remove-coupon
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 5) Checkout з кошика
+POST {{baseUrl}}/orders/checkout_from_cart
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 5.1) Альтернатива: напряму мікс (SKU + print)
+POST {{baseUrl}}/orders/checkout_mixed
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "currency": "EUR",
+  "items": [
+    { "type": "sku", "variant_id": 1, "qty": 1 },
+    { "type": "print", "quote_id": 1, "qty": 1 }
+  ]
+}
+
+### 6) Створити сесію оплати (Stripe Checkout)
+# @name pay
+POST {{baseUrl}}/payments/checkout
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "order_id": 1,
+  "success_url": "http://localhost:5173/checkout/success?order={ORDER_ID}",
+  "cancel_url": "http://localhost:5173/checkout/cancel?order={ORDER_ID}"
+}
+
+### 6.1) (dev) Емуляція вебхука (рекомендується Stripe CLI; цей запит може бути відхилений підписом)
+# POST {{baseUrl}}/payments/webhook
+# Content-Type: application/json
+#
+# {
+#   "type": "checkout.session.completed",
+#   "data": { "object": { "id": "cs_test_123", "metadata": { "payment_id": "1" } } }
+# }
+
+### 7) Перевірити статус замовлення
+GET {{baseUrl}}/orders/1
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 8) Print-jobs для замовлення
+GET {{baseUrl}}/print-jobs?order_id=1
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 8.1) (dev) Позначити job як done → має тригернути fulfilled, якщо всі done
+POST {{baseUrl}}/print-jobs/1/done
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 9) Імпорт (адмін) — DRY RUN
+POST {{baseUrl}}/admin/imports/products?dry_run=true&upsert=false
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data
+
+file=@./examples/products.csv;type=text/csv
+
+### 9.1) Імпорт (адмін) — виконати
+POST {{baseUrl}}/admin/imports/products?dry_run=false&upsert=true
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data
+
+file=@./examples/products.csv;type=text/csv

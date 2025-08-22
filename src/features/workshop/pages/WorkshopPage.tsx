@@ -1,6 +1,6 @@
 // src/features/workshop/pages/WorkshopPage.tsx
 import Page from "@/app/layout/Page";
-import { api } from "@/shared/api/client";
+import { api } from "@/shared/api/client.ts";
 import { API } from "@/shared/api/endpoints";
 import ProgressBar from "@/shared/ui/ProgressBar";
 import Modal from "@/shared/ui/Modal";
@@ -59,13 +59,13 @@ export default function WorkshopPage() {
         nozzle_ok: true,
     });
 
-    const JOBS_LIST = (API.jobs as any).list ?? API.jobs.list;
+    // const JOBS_LIST = (API.jobs as any).list ?? API.jobs.list;
 
     const load = async () => {
         try {
             setErr(null);
             setLoading(true);
-            const res = await api<any>(JOBS_LIST);
+            const res = await api<any>(API.jobs.me);
             setRaw(toArray<JobRow>(res));
         } catch (e: any) {
             setErr(e?.message || "Не вдалося завантажити задачі");
